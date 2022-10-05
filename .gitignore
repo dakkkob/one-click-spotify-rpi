@@ -168,3 +168,4 @@ cython_debug/
 settings.json
 .cache*
 rpi_gpios
+nohup.out

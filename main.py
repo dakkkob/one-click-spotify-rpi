@@ -126,21 +126,21 @@ def switch_off_all_leds():
 GPIO.setup(20, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.add_event_detect(
     20,
-    GPIO.BOTH,
+    GPIO.RISING,
     callback=lambda val: start_playing_playlist(playlist_mo_uri),
     bouncetime=1500
     )
 GPIO.setup(22, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.add_event_detect(
     22,
-    GPIO.BOTH,
+    GPIO.RISING,
     callback=lambda val: start_playing_playlist(playlist_we_uri),
     bouncetime=1500
     )
 GPIO.setup(23, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.add_event_detect(
     23,
-    GPIO.BOTH,
+    GPIO.RISING,
     callback=lambda val: start_playing_playlist(playlist_th_uri),
     bouncetime=1500
     )
