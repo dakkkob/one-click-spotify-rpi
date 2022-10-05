@@ -1,0 +1,13 @@
+{
+    "CID": "xxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "SECRET":"yyyyyyyyyyyyyyyyyyyyyyyy",
+    "USER": "spotify_username",
+    "SCOPE": "user-library-read user-read-playback-state user-modify-playback-state",
+    "REDIRECT": "http://localhost:8080",
+    "SPEAKER_NAME": "Beginning of your speaker name in Spotify devices",
+    "SPEAKER_DEFAULT_VOLUME": 27,
+    "PLAYLIST_MO_URI": "zzzzzzzzzzzzzzzzzzzzz",
+    "PLAYLIST_WE_URI": "wwwwwwwwwwwwwwwwwwwww",
+    "PLAYLIST_TH_URI": "uuuuuuuuuuuuuuuuuuuuu",
+    "LEDS": [4, 5, 6, 7, 8, 12, 13, 16]
+}
