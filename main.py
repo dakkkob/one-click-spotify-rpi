@@ -6,144 +6,95 @@ skips to next track '''
 import sys
 import time
 import threading
-import json
 from signal import pause
 from queue import Queue
-from spotipy import Spotify, SpotifyOAuth, CacheFileHandler
 from RPi import GPIO
+from settings import Settings
+from spotify import MySpotify
 
-SETTINGS_FILE_PATH = "settings.json"
-
-def load_settings():
-    ''' Loads settings from the settings file '''
-    try:
-        with open(SETTINGS_FILE_PATH, mode='r', encoding='utf-8') as settings_file:
-            return json.loads(settings_file.read())
-    except FileNotFoundError as exc:
-        raise f"Configuration file {SETTINGS_FILE_PATH} not found" from exc
-
-def get_device_id(devices, device_name):
-    ''' Checks spotify devices and retrieves ID of the one with SPEAKER_NAME value
-    from settings '''
-    for device in devices:
-        if device['name'].startswith(device_name):
-            return device['id']
-    return None
-
-def get_setting(mysettings, name):
-    ''' Returns value called name from given dictionary '''
-    if name not in mysettings:
-        raise Exception(
-            f"Configuration item {name} not found in settings file {SETTINGS_FILE_PATH}"
-            )
-    return mysettings[name]
-
-settings = load_settings()
-
-cid                     = get_setting(settings, 'CID')
-secret                  = get_setting(settings, 'SECRET')
-user                    = get_setting(settings, 'USER')
-scope                   = get_setting(settings, 'SCOPE')
-redirect                = get_setting(settings, 'REDIRECT')
-speaker_name            = get_setting(settings, 'SPEAKER_NAME')
-speaker_default_volume  = get_setting(settings, 'SPEAKER_DEFAULT_VOLUME')
-playlist_mo_uri         = get_setting(settings, 'PLAYLIST_MO_URI')
-playlist_we_uri         = get_setting(settings, 'PLAYLIST_WE_URI')
-playlist_th_uri         = get_setting(settings, 'PLAYLIST_TH_URI')
-leds                    = get_setting(settings, 'LEDS')
-
-spotify = Spotify(
-    auth_manager=SpotifyOAuth(
-        client_id=cid,
-        client_secret=secret,
-        redirect_uri = redirect,
-        scope=scope,
-        cache_handler=CacheFileHandler(username=user),
-        open_browser=False
-    )
-)
-speaker_id = get_device_id(spotify.devices()['devices'], speaker_name)
-
-if speaker_id is None:
-    raise f"No Spotify Device called {speaker_name} available"
-
-spotify.volume(speaker_default_volume, device_id=speaker_id)
-playlist_items = []
-GPIO.setmode(GPIO.BCM)
-queue = Queue()
-
-def start_playing_playlist(playlist_uri):
+def start_playing_playlist(playlist_uri, spotify, leds, queue):
     ''' Button handler function, resets the LEDs, starts playback of selected
     Spotify playlist and illuminates the LEDs '''
 
-    if len(playlist_items) == 0:
-        tracks = spotify.playlist_items(playlist_id=playlist_uri)['items']
-
-        for track in tracks:
-            playlist_items.append(track['track']['uri'])
-
-    spotify.start_playback(device_id=speaker_id, uris=[playlist_items.pop(0)])
+    spotify.start_playback(playlist_uri)
 
     if not queue.empty():
         queue.get(timeout=2)
         time.sleep(1)
 
-    thread_for_leds = threading.Thread(target=illuminate, args=(queue,))
+    thread_for_leds = threading.Thread(target=illuminate, args=(queue,leds,))
     thread_for_leds.start()
 
-def illuminate(myqueue):
+def illuminate(queue, leds):
     ''' Illuminates the LEDs '''
-    myqueue.put("working")
-    switch_off_all_leds()
-    for led in leds:
-        blink_for_30s_and_stay_on(led, myqueue)
-    switch_off_all_leds()
-    myqueue.get(timeout=2)
+    queue.put("working")
+    time.sleep(1)
+    switch_off_all_leds(leds)
+    for led in mysettings.leds:
+        for _ in range(0,30):
+            change_led_status(led, leds, GPIO.LOW, queue)
+            change_led_status(led, leds, GPIO.HIGH, queue)
+    switch_off_all_leds(leds)
+    queue.get(timeout=2)
 
-def blink_for_30s_and_stay_on(led, myqueue):
-    ''' Blinks single LED for 30s and keeps it on in the end '''
-    for _ in range(0,30):
-        check_if_exit(myqueue)
-        GPIO.output(led, GPIO.LOW)
-        time.sleep(0.5)
-        check_if_exit(myqueue)
-        GPIO.output(led, GPIO.HIGH)
-        time.sleep(0.5)
+def change_led_status(led, leds, status, queue):
+    ''' Changes status of given LED '''
+    check_if_exit(queue, leds)
+    GPIO.output(led, status)
+    time.sleep(0.5)
 
-def check_if_exit(myqueue):
+def check_if_exit(queue, leds):
     ''' Keeps checking the synchronization queue so that it stops the thread
     if user pressed another button earlier (before the song ends) '''
-    if myqueue.empty():
-        switch_off_all_leds()
+    if queue.empty():
+        switch_off_all_leds(leds)
         sys.exit()
 
-def switch_off_all_leds():
+def switch_off_all_leds(leds):
     ''' Turns off all LEDs '''
     for led in leds:
-        GPIO.setup(led, GPIO.OUT)
         GPIO.output(led, GPIO.LOW)
 
-GPIO.setup(20, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.add_event_detect(
-    20,
-    GPIO.RISING,
-    callback=lambda val: start_playing_playlist(playlist_mo_uri),
-    bouncetime=1500
-    )
-GPIO.setup(22, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.add_event_detect(
-    22,
-    GPIO.RISING,
-    callback=lambda val: start_playing_playlist(playlist_we_uri),
-    bouncetime=1500
-    )
-GPIO.setup(23, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.add_event_detect(
-    23,
-    GPIO.RISING,
-    callback=lambda val: start_playing_playlist(playlist_th_uri),
-    bouncetime=1500
+def setup_gpio(leds, spotify, queue):
+    ''' Sets up GPIO devices '''
+    GPIO.setmode(GPIO.BCM)
+    for led in leds:
+        GPIO.setup(led, GPIO.OUT)
+
+    setup_gpio_button(20, lambda val: start_playing_playlist(
+                            playlist_uri=mysettings.playlist_mo_uri,
+                            spotify=spotify,
+                            leds=leds,
+                            queue=queue
+                            )
+                      )
+    setup_gpio_button(22, lambda val: start_playing_playlist(
+                            playlist_uri=mysettings.playlist_we_uri,
+                            spotify=spotify,
+                            leds=leds,
+                            queue=queue
+                            )
+                      )
+    setup_gpio_button(23, lambda val: start_playing_playlist(
+                            playlist_uri=mysettings.playlist_th_uri,
+                            spotify=spotify,
+                            leds=leds,
+                            queue=queue))
+
+def setup_gpio_button(gpio_port, callback):
+    ''' Sets up a button and assigns it a callback function '''
+    GPIO.setup(gpio_port, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
+    GPIO.add_event_detect(
+        gpio_port,
+        GPIO.RISING,
+        callback=callback,
+        bouncetime=1500
     )
 
-print("There we are")
+mysettings = Settings()
+myspotify  = MySpotify(mysettings)
+myqueue = Queue()
+setup_gpio(mysettings.leds, myspotify, myqueue)
+
+print("Initialization done, waiting for buttonos ...")
 pause()
